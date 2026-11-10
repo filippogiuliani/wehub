@@ -6,7 +6,6 @@
   import { fmtDate } from '../lib/date.js';
   import LanguageSwitch from '../components/LanguageSwitch.svelte';
   import Icon from '../components/Icon.svelte';
-  import Shortcuts from '../components/Shortcuts.svelte';
 
   let { onlogout } = $props();
   let family = $state(null);
@@ -182,10 +181,6 @@
       {/each}
     </ul>
   </section>
-
-  {#if admin}
-    <Shortcuts members={family.members} />
-  {/if}
 
   {#if admin}
     <section class="card stack">

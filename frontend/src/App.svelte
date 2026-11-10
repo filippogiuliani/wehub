@@ -11,6 +11,7 @@
   import Home from './pages/Home.svelte';
   import Family from './pages/Family.svelte';
   import Import from './pages/Import.svelte';
+  import Links from './pages/Links.svelte';
 
   const PUBLIC = ['login', 'signup', 'privacy'];
   let status = $state('loading');
@@ -29,7 +30,7 @@
 
   const authenticated = $derived(!!app.me?.authenticated);
   const admin = $derived(app.me?.role === 'admin');
-  const nav = $derived(['home', 'family', ...(admin ? ['import'] : [])]);
+  const nav = $derived(['home', 'family', ...(admin ? ['links', 'import'] : [])]);
   const page = $derived.by(() => {
     if (!authenticated) return PUBLIC.includes(route.name) ? route.name : 'login';
     if (route.name === 'privacy') return 'privacy';
@@ -52,7 +53,7 @@
     await loadMe().catch(() => {});
     location.hash = '#/login';
   }
-  const ICONS = { home: 'apps', family: 'family', import: 'imports' };
+  const ICONS = { home: 'apps', family: 'family', links: 'link', import: 'imports' };
 </script>
 
 {#if status === 'loading'}
@@ -82,6 +83,7 @@
       {#key page + ':' + app.me.family?.id}
         {#if page === 'family'}<Family onlogout={logout} />
         {:else if page === 'import'}<Import />
+        {:else if page === 'links'}<Links />
         {:else}<Home />{/if}
       {/key}
     </main>

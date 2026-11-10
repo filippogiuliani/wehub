@@ -15,6 +15,10 @@ weHub is where the family is defined, once, for **doTrack**, **eaTrack** and **p
   control: those services keep their own sign-in.
 - **Import**: brings in, once, the members, people and children the apps already have. Nothing is deleted in the
   apps: each one recognises its own family and people and keeps all its data (meals, to-dos, documents).
+- **Merging families made separately**: if someone (e.g. the partner) had signed up on their own in an app, the import
+  proposes their family there; on request the app moves all its data into the shared family (people, labels, foods
+  and children with the same name become one; an identical paTrack document goes to the trash), after making a
+  backup of its database.
 
 > **Made with AI.** Like the other apps, written by an AI assistant (Anthropic's Claude) and checked with automated
 > tests; review it before exposing it to the internet.

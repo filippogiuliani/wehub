@@ -135,7 +135,7 @@ def test_import(admin, monkeypatch):
     r = ok(admin.post('/api/import/apply', json={'selected': {'dotrack': 4, 'eatrack': 1},
                                                  'members': [m for m in p['members'] if not m['exists']],
                                                  'groups': p['groups']}))
-    assert r == {'families': 2, 'members': 1, 'people': 2, 'linked': 3}
+    assert r == {'families': 2, 'members': 1, 'people': 2, 'linked': 3, 'merges': {}}
     f = ok(admin.get('/api/family'))
     assert {pp['name'] for pp in f['people']} == {'Fil', 'Sara', 'Luca', 'Nonna Anna'}
     # The apps now get their own ids back
@@ -211,3 +211,51 @@ def test_shortcuts_per_person(admin, client):
     assert ok(admin.get('/api/family/shortcuts'))[1]['members'] == [me_id]
     ok(admin.delete(f'/api/family/shortcuts/{vault}'))
     assert [l['name'] for l in me(admin)['shortcuts']] == ['Meteo']
+
+
+def test_import_merges_a_family_made_separately(admin, monkeypatch):
+    """Sara had made her own doTrack family: it is proposed for merging, and merged on request."""
+    exports = {
+        'dotrack': [{'local_id': 4, 'name': 'Famiglia di Fil', 'members': [{'email': 'fil@example.com', 'name': 'Fil', 'role': 'admin'}],
+                     'people': [{'local_id': 7, 'name': 'Luca', 'kind': 'adult'}]},
+                    {'local_id': 10, 'name': 'Famiglia di Sara', 'members': [{'email': 'sara@example.com', 'name': 'Sara', 'role': 'admin'}],
+                     'people': [{'local_id': 11, 'name': 'luca', 'kind': 'adult'}, {'local_id': 12, 'name': 'Nonna', 'kind': 'adult'}]},
+                    {'local_id': 20, 'name': 'Estranei', 'members': [{'email': 'x@x.it', 'name': 'X', 'role': 'admin'}], 'people': []}],
+        'eatrack': [], 'patrack': [],
+    }
+    monkeypatch.setattr(api_import, 'fetch_export', lambda app: exports[app['id']])
+    ok(admin.post('/api/family/members', json={'name': 'Sara', 'email': 'sara@example.com'}), 201)
+    p = ok(admin.get('/api/import/preview'))
+    do = next(a for a in p['apps'] if a['id'] == 'dotrack')
+    assert do['selected'] == 4 and do['merge_candidates'] == [10] and do['merge'] == []   # strangers are never proposed
+    assert {g['key'] for g in p['groups']} == {'luca'}
+    # Choosing to merge: Sara's people join the proposal
+    p = ok(admin.get('/api/import/preview?merge_dotrack=10,20'))
+    do = next(a for a in p['apps'] if a['id'] == 'dotrack')
+    assert do['merge'] == [10]
+    groups = {g['key']: g for g in p['groups']}
+    assert set(groups) == {'luca', 'nonna'} and len(groups['luca']['sources']) == 2
+    calls = []
+    monkeypatch.setattr(api_import, 'merge_in_app', lambda app, into, fams: calls.append((app['id'], into, fams)) or {'items': 3, 'families': 1})
+    r = ok(admin.post('/api/import/apply', json={'selected': {'dotrack': 4}, 'merge': {'dotrack': [10]}, 'members': [],
+                                                 'groups': p['groups']}))
+    assert calls == [('dotrack', 4, [10])] and r['merges'] == {'dotrack': {'items': 3, 'families': 1}}
+
+
+def test_merge_in_app_reports_errors(monkeypatch):
+    import requests
+
+    class Resp:
+        def __init__(self, code, data):
+            self.status_code, self._data = code, data
+        def json(self):
+            return self._data
+    app = {'internal_url': 'http://dotrack.test', 'key': KEYS['dotrack']}
+    monkeypatch.setattr(requests, 'post', lambda *a, **k: Resp(200, {'report': {'items': 2}}))
+    assert api_import.merge_in_app(app, 1, [2]) == {'items': 2}
+    monkeypatch.setattr(requests, 'post', lambda *a, **k: Resp(409, {'error': 'family 2 still has rows'}))
+    assert api_import.merge_in_app(app, 1, [2]) == {'error': 'family 2 still has rows'}
+    def down(*a, **k):
+        raise requests.ConnectionError('x')
+    monkeypatch.setattr(requests, 'post', down)
+    assert 'not reachable' in api_import.merge_in_app(app, 1, [2])['error']

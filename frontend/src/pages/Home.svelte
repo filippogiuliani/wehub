@@ -3,6 +3,7 @@
   import { app } from '../lib/store.svelte.js';
   import { language, t } from '../lib/i18n.svelte.js';
   import Icon from '../components/Icon.svelte';
+  import AppIcon from '../components/AppIcon.svelte';
   const apps = $derived(app.me.apps ?? []);
   const links = $derived(app.me.shortcuts ?? []);
 </script>
@@ -16,7 +17,7 @@
   <div class="grid">
     {#each apps as a (a.id)}
       <a class="tile" href={a.url || '#'} aria-disabled={!a.url}>
-        <span class="ic"><Icon name={a.id} size={26} /></span>
+        <AppIcon id={a.id} size={48} />
         <span class="txt">
           <b>{a.name}</b>
           <span class="small muted">{a.description?.[language.id] ?? a.description?.en ?? ''}</span>
@@ -31,8 +32,19 @@
   <p class="empty">{t('home.no_apps')}</p>
 {/if}
 
+{#if links.length || app.me.role === 'admin'}
+  <div class="spread sub">
+    <h2>{t('links.title')}</h2>
+    {#if app.me.role === 'admin'}<a class="btn ghost sm" href="#/links"><Icon name="edit" size={14} />{t('links.manage')}</a>{/if}
+  </div>
+{/if}
+{#if !links.length && app.me.role === 'admin'}
+  <a class="empty-links" href="#/links">
+    <Icon name="plus" size={18} />
+    <span><b>{t('links.add_first')}</b><br /><span class="small muted">{t('links.add_first_note')}</span></span>
+  </a>
+{/if}
 {#if links.length}
-  <h2 class="sub">{t('links.title')}</h2>
   <div class="links">
     {#each links as l (l.id)}
       <a class="link" href={l.url} target="_blank" rel="noopener noreferrer">
@@ -51,12 +63,14 @@
   .tile { display: flex; align-items: center; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-lg);
     background: var(--surface); text-decoration: none; color: var(--ink); }
   .tile:hover { border-color: var(--line-strong); background: var(--surface-2); }
-  .ic { width: 48px; height: 48px; border-radius: 12px; background: var(--primary); color: var(--primary-ink); display: grid; place-items: center; flex-shrink: 0; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .txt b { font-size: 1.05rem; }
   .txt .badge { align-self: flex-start; margin-top: 4px; }
   .note { margin-top: 16px; }
   .sub { margin: 28px 0 12px; }
+  .empty-links { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1.5px dashed var(--line-strong); border-radius: var(--r-md);
+    text-decoration: none; color: var(--ink); }
+  .empty-links:hover { border-color: var(--primary); background: var(--primary-soft); }
   .links { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
   .link { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
     background: var(--surface); text-decoration: none; color: var(--ink); min-width: 0; }

@@ -1,6 +1,6 @@
 """A tiny OpenID Connect provider FOR DEVELOPMENT ONLY: it stands in for Pocket ID when trying weHub and the apps
-on a development machine. There are no passwords: the sign-in page lists the people in dev/users.json and you click
-one. Never expose it to the internet.
+on a development machine. There are no passwords: the sign-in page lists the people in dev/users.json (or the file in
+FAKE_OIDC_USERS) and you click one. Never expose it to the internet.
 
   python dev/fake_oidc.py            # http://127.0.0.1:3009 only (FAKE_OIDC_HOST to change), issuer from FAKE_OIDC_ISSUER
 
@@ -17,7 +17,7 @@ from flask import Flask, abort, jsonify, redirect, request
 
 ISSUER = os.environ.get('FAKE_OIDC_ISSUER', 'http://localhost:3009').rstrip('/')
 HERE = os.path.dirname(os.path.abspath(__file__))
-USERS = json.load(open(os.path.join(HERE, 'users.json')))
+USERS = json.load(open(os.environ.get('FAKE_OIDC_USERS') or os.path.join(HERE, 'users.json')))
 KEY = JsonWebKey.generate_key('RSA', 2048, is_private=True, options={'kid': 'dev'})
 CODES = {}  # code → {user, nonce, client_id, redirect_uri}
 TOKENS = {}  # access token → user

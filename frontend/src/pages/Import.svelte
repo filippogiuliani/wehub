@@ -5,6 +5,7 @@
   import { showError, toast } from '../lib/store.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
   import Icon from '../components/Icon.svelte';
+  import AppIcon from '../components/AppIcon.svelte';
 
   let data = $state(null);
   let loading = $state(false);
@@ -12,10 +13,13 @@
   let groups = $state([]);
   let done = $state(null);
 
-  async function load(selection = null) {
+  async function load(selection = null, merges = null) {
     loading = true;
     try {
-      const q = selection ? '?' + new URLSearchParams(Object.entries(selection).map(([k, v]) => [k, v ?? 'none'])) : '';
+      const params = new URLSearchParams();
+      if (selection) for (const [k, v] of Object.entries(selection)) params.set(k, v ?? 'none');
+      if (merges) for (const [k, v] of Object.entries(merges)) if (v.length) params.set('merge_' + k, v.join(','));
+      const q = params.toString() ? '?' + params : '';
       data = await get('/import/preview' + q);
       members = data.members.filter((m) => !m.exists).map((m) => m.email);
       groups = data.groups.map((g) => ({ ...g, target: g.target ?? '' }));
@@ -24,13 +28,20 @@
   load();
 
   const selected = () => Object.fromEntries(data.apps.filter((a) => a.ok).map((a) => [a.id, a.selected]));
+  const merging = () => Object.fromEntries(data.apps.filter((a) => a.ok).map((a) => [a.id, a.merge ?? []]));
   function choose(appId, value) {
-    load({ ...selected(), [appId]: value === '' ? null : Number(value) });
+    load({ ...selected(), [appId]: value === '' ? null : Number(value) }, { ...merging(), [appId]: [] });
   }
+  function toggleMerge(appId, id) {
+    const cur = merging()[appId];
+    load(selected(), { ...merging(), [appId]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  }
+  const familyName = (a, id) => a.families.find((f) => f.local_id === id);
   async function apply() {
     try {
       done = await post('/import/apply', {
         selected: selected(),
+        merge: merging(),
         members: data.members.filter((m) => members.includes(m.email)),
         groups: groups.map((g) => ({ ...g, target: g.target === '' ? null : g.target })),
       });
@@ -38,6 +49,8 @@
       await load();
     } catch (e) { showError(e); }
   }
+  const mergeErrors = $derived(done ? Object.entries(done.merges ?? {}).filter(([, r]) => r.error) : []);
+  const mergeDone = $derived(done ? Object.entries(done.merges ?? {}).filter(([, r]) => !r.error) : []);
 </script>
 
 <header class="head"><h1>{t('nav.import')}</h1><p class="muted">{t('import.subtitle')}</p></header>
@@ -51,7 +64,7 @@
       <ul class="list">
         {#each data.apps as a (a.id)}
           <li>
-            <span class="ic"><Icon name={a.id} size={20} /></span>
+            <AppIcon id={a.id} size={34} />
             <div class="grow">
               <b>{a.name}</b>
               {#if !a.ok}<div class="small err">{t('import.unreachable', { reason: a.error })}</div>
@@ -66,6 +79,21 @@
               </select>
             {/if}
           </li>
+          {#if a.ok && a.merge_candidates?.length}
+            <li class="merge">
+              <div class="grow stack small-gap">
+                <span class="small">{t('import.merge_intro')}</span>
+                {#each a.merge_candidates as id (id)}
+                  {@const f = familyName(a, id)}
+                  <label class="row">
+                    <input type="checkbox" checked={a.merge.includes(id)} onchange={() => toggleMerge(a.id, id)} disabled={loading} />
+                    <span>{t('import.merge_into', { name: f.name, members: f.members.join(', ') })}</span>
+                  </label>
+                {/each}
+                <span class="tiny muted">{t('import.merge_note')}</span>
+              </div>
+            </li>
+          {/if}
         {/each}
       </ul>
     </section>
@@ -123,7 +151,10 @@
       <button class="btn primary" onclick={apply} disabled={loading}><Icon name="check" size={16} />{t('import.apply')}</button>
       <button class="btn ghost" onclick={() => load()} disabled={loading}><Icon name="refresh" size={15} />{t('import.reload')}</button>
     </div>
-    {#if done}<p class="small">{t('import.result', done)}</p>{/if}
+    {#if done}<p class="small">{t('import.result', done)}</p>
+      {#each mergeDone as [appId, r] (appId)}<p class="small">{t('import.merged', { app: appId, n: r.families ?? 0 })}</p>{/each}
+      {#each mergeErrors as [appId, r] (appId)}<p class="small err">{t('import.merge_failed', { app: appId, error: r.error })}</p>{/each}
+    {/if}
     <p class="tiny muted">{t('import.after')}</p>
   </div>
 {/if}
@@ -141,4 +172,6 @@
   .date { width: auto; min-height: 36px; }
   .small-gap { gap: 6px; }
   .err { color: var(--danger); }
+  .merge { padding-left: 44px !important; background: var(--surface-2); border-radius: var(--r-sm); }
+  .merge label { gap: 8px; align-items: flex-start; }
 </style>
