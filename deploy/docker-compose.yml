@@ -1,0 +1,153 @@
+# Family apps stack: weHub + doTrack + eaTrack + paTrack (Portainer → Stacks → Add stack → Web editor, or
+# `docker compose --env-file stack.env up -d`). Pocket ID is NOT here: use the one you already have.
+#
+# Before deploying:
+#   1. build the images on the Docker host:  ./build-images.sh   (they are local images, never pulled)
+#   2. fill in the variables (Portainer: "Environment variables" → "Load variables from .env file" with
+#      stack.env.example filled in)
+#   3. your reverse proxy (HTTPS) forwards each public address to the port published below
+#
+# Data lives in folders of the host under DATA_ROOT, so backups (paTrack's Borg script, copies of the folders)
+# work from the host. The apps talk to weHub over the internal network "family".
+
+x-common: &common
+  restart: unless-stopped
+  networks: [family]
+
+services:
+  wehub:
+    <<: *common
+    image: wehub:latest
+    container_name: wehub
+    ports: ["${WEHUB_PORT:-3004}:3004"]
+    volumes: ["${DATA_ROOT:?set DATA_ROOT}/wehub:/app/data"]
+    environment:
+      PORT_CHECK: "3004"
+      TZ: ${TZ:-Europe/Rome}
+      WEHUB_URL: ${WEHUB_URL:?set WEHUB_URL}
+      WEHUB_COOKIE_SECURE: "1"
+      WEHUB_PROXY: "1"
+      WEHUB_SIGNUP: closed
+      WEHUB_PASSWORD_LOGIN: "0"
+      WEHUB_OIDC: pocketid
+      WEHUB_OIDC_POCKETID_ISSUER: ${POCKETID_ISSUER:?set POCKETID_ISSUER}
+      WEHUB_OIDC_POCKETID_ID: ${WEHUB_OIDC_ID}
+      WEHUB_OIDC_POCKETID_SECRET: ${WEHUB_OIDC_SECRET}
+      WEHUB_OIDC_POCKETID_NAME: Pocket ID
+      WEHUB_APPS: dotrack,eatrack,patrack
+      WEHUB_APP_DOTRACK_URL: ${DOTRACK_URL}
+      WEHUB_APP_DOTRACK_INTERNAL_URL: http://dotrack:3001
+      WEHUB_APP_DOTRACK_KEY: ${DOTRACK_HUB_KEY:?set DOTRACK_HUB_KEY}
+      WEHUB_APP_EATRACK_URL: ${EATRACK_URL}
+      WEHUB_APP_EATRACK_INTERNAL_URL: http://eatrack:3000
+      WEHUB_APP_EATRACK_KEY: ${EATRACK_HUB_KEY:?set EATRACK_HUB_KEY}
+      WEHUB_APP_PATRACK_URL: ${PATRACK_URL}
+      WEHUB_APP_PATRACK_INTERNAL_URL: http://patrack:3002
+      WEHUB_APP_PATRACK_KEY: ${PATRACK_HUB_KEY:?set PATRACK_HUB_KEY}
+      WEHUB_SMTP_HOST: ${SMTP_HOST:-}
+      WEHUB_SMTP_PORT: ${SMTP_PORT:-587}
+      WEHUB_SMTP_USER: ${SMTP_USER:-}
+      WEHUB_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      WEHUB_MAIL_FROM: weHub <${MAIL_FROM_ADDRESS:-noreply@example.com}>
+    healthcheck: &health
+      test: ["CMD", "python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/me' % os.environ.get('PORT_CHECK'), timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  dotrack:
+    <<: *common
+    image: dotrack:latest
+    container_name: dotrack
+    ports: ["${DOTRACK_PORT:-3001}:3001"]
+    volumes: ["${DATA_ROOT}/dotrack:/app/data"]
+    environment:
+      PORT_CHECK: "3001"
+      TZ: ${TZ:-Europe/Rome}
+      DOTRACK_URL: ${DOTRACK_URL:?set DOTRACK_URL}
+      DOTRACK_COOKIE_SECURE: "1"
+      DOTRACK_PROXY: "1"
+      DOTRACK_SIGNUP: closed
+      DOTRACK_REMINDER_HOUR: ${DOTRACK_REMINDER_HOUR:-8}
+      DOTRACK_OIDC: pocketid
+      DOTRACK_OIDC_POCKETID_ISSUER: ${POCKETID_ISSUER}
+      DOTRACK_OIDC_POCKETID_ID: ${DOTRACK_OIDC_ID}
+      DOTRACK_OIDC_POCKETID_SECRET: ${DOTRACK_OIDC_SECRET}
+      DOTRACK_OIDC_POCKETID_NAME: Pocket ID
+      DOTRACK_HUB_URL: http://wehub:3004
+      DOTRACK_HUB_PUBLIC_URL: ${WEHUB_URL}
+      DOTRACK_HUB_KEY: ${DOTRACK_HUB_KEY}
+      DOTRACK_SMTP_HOST: ${SMTP_HOST:-}
+      DOTRACK_SMTP_PORT: ${SMTP_PORT:-587}
+      DOTRACK_SMTP_USER: ${SMTP_USER:-}
+      DOTRACK_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      DOTRACK_MAIL_FROM: doTrack <${MAIL_FROM_ADDRESS:-noreply@example.com}>
+    healthcheck: *health
+
+  eatrack:
+    <<: *common
+    image: eatrack:latest
+    container_name: eatrack
+    ports: ["${EATRACK_PORT:-3000}:3000"]
+    volumes: ["${DATA_ROOT}/eatrack:/app/data"]
+    environment:
+      PORT_CHECK: "3000"
+      TZ: ${TZ:-Europe/Rome}
+      EATRACK_URL: ${EATRACK_URL:?set EATRACK_URL}
+      EATRACK_COOKIE_SECURE: "1"
+      EATRACK_PROXY: "1"
+      EATRACK_SIGNUP: closed
+      EATRACK_OIDC: pocketid
+      EATRACK_OIDC_POCKETID_ISSUER: ${POCKETID_ISSUER}
+      EATRACK_OIDC_POCKETID_ID: ${EATRACK_OIDC_ID}
+      EATRACK_OIDC_POCKETID_SECRET: ${EATRACK_OIDC_SECRET}
+      EATRACK_OIDC_POCKETID_NAME: Pocket ID
+      EATRACK_HUB_URL: http://wehub:3004
+      EATRACK_HUB_PUBLIC_URL: ${WEHUB_URL}
+      EATRACK_HUB_KEY: ${EATRACK_HUB_KEY}
+      EATRACK_SMTP_HOST: ${SMTP_HOST:-}
+      EATRACK_SMTP_PORT: ${SMTP_PORT:-587}
+      EATRACK_SMTP_USER: ${SMTP_USER:-}
+      EATRACK_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EATRACK_MAIL_FROM: eaTrack <${MAIL_FROM_ADDRESS:-noreply@example.com}>
+    healthcheck: *health
+
+  patrack:
+    <<: *common
+    image: patrack:latest
+    container_name: patrack
+    ports: ["${PATRACK_PORT:-3002}:3002"]
+    volumes: ["${DATA_ROOT}/patrack:/app/data"]
+    environment:
+      PORT_CHECK: "3002"
+      TZ: ${TZ:-Europe/Rome}
+      PATRACK_URL: ${PATRACK_URL:?set PATRACK_URL}
+      PATRACK_COOKIE_SECURE: "1"
+      PATRACK_PROXY: "1"
+      PATRACK_SIGNUP: closed
+      PATRACK_OIDC: pocketid
+      PATRACK_OIDC_POCKETID_ISSUER: ${POCKETID_ISSUER}
+      PATRACK_OIDC_POCKETID_ID: ${PATRACK_OIDC_ID}
+      PATRACK_OIDC_POCKETID_SECRET: ${PATRACK_OIDC_SECRET}
+      PATRACK_OIDC_POCKETID_NAME: Pocket ID
+      PATRACK_HUB_URL: http://wehub:3004
+      PATRACK_HUB_PUBLIC_URL: ${WEHUB_URL}
+      PATRACK_HUB_KEY: ${PATRACK_HUB_KEY}
+      PATRACK_SMTP_HOST: ${SMTP_HOST:-}
+      PATRACK_SMTP_PORT: ${SMTP_PORT:-587}
+      PATRACK_SMTP_USER: ${SMTP_USER:-}
+      PATRACK_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      PATRACK_MAIL_FROM: paTrack <${MAIL_FROM_ADDRESS:-noreply@example.com}>
+      # Import by email (leave empty to turn it off)
+      PATRACK_INBOX_ADDRESS: ${PATRACK_INBOX_ADDRESS:-}
+      PATRACK_IMAP_HOST: ${PATRACK_IMAP_HOST:-}
+      PATRACK_IMAP_PORT: ${PATRACK_IMAP_PORT:-993}
+      PATRACK_IMAP_USER: ${PATRACK_IMAP_USER:-}
+      PATRACK_IMAP_PASSWORD: ${PATRACK_IMAP_PASSWORD:-}
+      PATRACK_IMAP_DONE_FOLDER: ${PATRACK_IMAP_DONE_FOLDER:-}
+    healthcheck: *health
+
+networks:
+  family:
+    name: family

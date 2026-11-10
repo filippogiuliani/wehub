@@ -1,0 +1,6 @@
+[
+  {"sub": "dev-admin", "name": "Anna (admin)", "email": "anna@example.com"},
+  {"sub": "dev-partner", "name": "Marco (partner)", "email": "marco@example.com"},
+  {"sub": "dev-babysitter", "name": "Giulia (tata)", "email": "giulia@example.com"},
+  {"sub": "dev-demo", "name": "Demo", "email": "demo@example.com"}
+]
