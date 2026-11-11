@@ -8,7 +8,7 @@ Create four OIDC clients (weHub, doTrack, eaTrack, paTrack). Callback URL of eac
 person by verified email the first time).
 
 ## 2. Images
-On the Docker host, with the four source folders side by side (`wehub/`, `organizer/` = doTrack, `eatrack/`, `patrack/`):
+On the Docker host, with the four source folders side by side (`wehub/`, `dotrack/`, `eatrack/`, `patrack/`):
 ```sh
 ./wehub/deploy/build-images.sh        # SRC=… and DOTRACK_DIR=… if your folders are elsewhere / named differently
 ```

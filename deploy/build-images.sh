@@ -10,7 +10,7 @@ build() { # image folder
   docker build -t "$1:latest" "$SRC/$2"
 }
 build wehub wehub
-build dotrack "${DOTRACK_DIR:-organizer}"
+build dotrack "${DOTRACK_DIR:-dotrack}"
 build eatrack "${EATRACK_DIR:-eatrack}"
 build patrack "${PATRACK_DIR:-patrack}"
 echo "Done. Images: wehub, dotrack, eatrack, patrack (tag latest)."
