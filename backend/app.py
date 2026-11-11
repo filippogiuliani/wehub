@@ -67,7 +67,7 @@ def create_app():
         resp.headers.setdefault('X-Frame-Options', 'DENY')
         resp.headers.setdefault('Content-Security-Policy', CSP)
         if request.path.startswith('/api/'):
-            resp.headers['Cache-Control'] = 'no-store'
+            resp.headers.setdefault('Cache-Control', 'no-store')
         return resp
 
     @app.errorhandler(400)

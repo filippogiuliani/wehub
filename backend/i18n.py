@@ -64,6 +64,10 @@ IT = {
     'Invalid address': 'Indirizzo non valido',
     'Invalid members': 'Membri non validi',
     'Choose who sees it': 'Scegli chi lo vede',
+    'Paste the content of services.yaml': 'Incolla il contenuto di services.yaml',
+    'This is not a Homepage services.yaml': 'Non è un services.yaml di Homepage',
+    'Invalid YAML': 'YAML non valido',
+    'Icon not available': 'Icona non disponibile',
     'There is already someone with this name': "C'è già qualcuno con questo nome",
     'Too many people': 'Troppe persone',
     'Person not found': 'Persona non trovata',
@@ -84,6 +88,7 @@ IT_PATTERNS = [
     (r'^Password must be at least (\d+) characters$', r'La password deve avere almeno \1 caratteri'),
     (r'^(.+): invalid date$', r'\1: data non valida'),
     (r'^(.+): invalid time$', r'\1: ora non valida'),
+    (r'^Invalid YAML \(line (\d+)\)$', r'YAML non valido (riga \1)'),
 ]
 
 MESSAGES = {'it': (IT, IT_PATTERNS)}

@@ -7,12 +7,12 @@ from contextlib import contextmanager
 DATA_DIR = os.environ.get('WEHUB_DATA', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
 DB_PATH = os.path.join(DATA_DIR, 'wehub.db')
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 ROLES = ['admin', 'member']
 PERSON_KINDS = ['adult', 'child']
 # full = everything the app offers; limited = only what is about some people (used by apps that support it)
 ACCESS_LEVELS = ['full', 'limited']
-# Icons a link can have (drawn by the interface)
+# weHub's own icons for links (drawn by the interface); links can also use Homepage-style icons, see icons.py
 SHORTCUT_ICONS = ['link', 'lock', 'home', 'photo', 'film', 'music', 'server', 'chart', 'mail', 'calendar', 'book', 'cloud', 'tool']
 
 SCHEMA = '''
@@ -95,7 +95,9 @@ CREATE TABLE IF NOT EXISTS shortcuts (
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    icon TEXT NOT NULL DEFAULT 'link',
+    icon TEXT NOT NULL DEFAULT 'link',          -- see icons.py
+    grp TEXT NOT NULL DEFAULT '',               -- group on the home page ('' = none), as in Homepage's services.yaml
+    monitor INTEGER NOT NULL DEFAULT 1,         -- 1 = the home page shows whether the service is up (status.py)
     everyone INTEGER NOT NULL DEFAULT 1,        -- 0 = only the members in shortcut_members
     position INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -154,11 +156,20 @@ def add_member(conn, family_id, user_id, name, role='member', app_ids=None):
     bump(conn, family_id)
 
 
+def _migrate(conn):
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(shortcuts)')}
+    if 'grp' not in cols:  # version 2: groups of links
+        conn.execute("ALTER TABLE shortcuts ADD COLUMN grp TEXT NOT NULL DEFAULT ''")
+    if 'monitor' not in cols:  # version 3: is the service up?
+        conn.execute('ALTER TABLE shortcuts ADD COLUMN monitor INTEGER NOT NULL DEFAULT 1')
+
+
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
         conn.execute('PRAGMA journal_mode = WAL')
         conn.commit()

@@ -11,8 +11,11 @@ weHub is where the family is defined, once, for **doTrack**, **eaTrack** and **p
 - **People without an account**: kids, grandparents… A *child* also appears in eaTrack; everyone appears in doTrack
   ("people") and paTrack (who documents are about).
 - **Home page** with the apps each person may use, and **links** to other services (Vaultwarden, Home Assistant,
-  Immich…) managed by the admin, each shown to everyone or only to chosen members. Hiding a link is not access
-  control: those services keep their own sign-in.
+  Immich…) in **groups**, like [Homepage](https://gethomepage.dev): managed by the admin, each shown to everyone or
+  only to chosen members. Icons are written as in Homepage (`jellyfin.png`, `synology-photos`, `sh-immich`,
+  `mdi-logout`, `si-gitea` or an image address); weHub downloads each one once and serves it itself. A Homepage
+  `services.yaml` can be pasted in **Links → Import from Homepage** (`container`, `server`, `widget` are ignored).
+  Hiding a link is not access control: those services keep their own sign-in.
 - **Import**: brings in, once, the members, people and children the apps already have. Nothing is deleted in the
   apps: each one recognises its own family and people and keeps all its data (meals, to-dos, documents).
 - **Merging families made separately**: if someone (e.g. the partner) had signed up on their own in an app, the import
@@ -36,6 +39,9 @@ Each app keeps working on its own unless `*_HUB_URL` and `*_HUB_KEY` are set. Wh
    child is archived, meals kept.
 4. If weHub is down, people who signed in before go on working with the copy.
 5. In the apps, the family, its members and people become read-only, with a link to weHub.
+6. eaTrack sends the weekly menu to a doTrack shopping list through weHub
+   (`/api/service/dotrack/families/<id>/lists…`): weHub passes the request on with doTrack's key, so there is no
+   doTrack address or token to set in eaTrack. The admin only picks the list (eaTrack → Family).
 
 Each app has its own key (`python manage.py new-key`), set both in weHub (`WEHUB_APP_<APP>_KEY`) and in the app
 (`<APP>_HUB_KEY`). It is only used between servers.

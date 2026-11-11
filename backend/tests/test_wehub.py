@@ -213,6 +213,107 @@ def test_shortcuts_per_person(admin, client):
     assert [l['name'] for l in me(admin)['shortcuts']] == ['Meteo']
 
 
+
+SERVICES_YAML = """---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/services/
+
+- Multimedia:
+    - Jellyfin:
+        icon: jellyfin.png
+        href: https://jellyfin.example.it
+        description: Streaming Video
+        container: jellyfin
+
+    - Photos:
+        icon: synology-photos
+        href: https://photos.example.it
+        description: Backup Foto e Video
+
+- Sicurezza & Conoscenza:
+    - Vaultwarden:
+        icon: vaultwarden.png # comment
+        href: https://vault.example.it
+        description: Password Manager
+        container: vaultwarden
+
+- IRC:
+    - kwIRC:
+        icon: https://myhome.example.it/images/logo.png
+        href: https://myhome.example.it
+        description: Just Another IRC client
+
+- Sistema:
+    - Logout:
+        icon: mdi-logout
+        href: https://homepage.example.it/oauth2/sign_out?rd=https%3A%2F%2Fid.example.it%2Fend-session
+        description: Termina la sessione OIDC
+        #server: my-docker-host
+        container: homepage-oauth2-proxy
+    - Only a widget:
+        widget:
+          type: glances
+"""
+
+
+def test_import_homepage_services_yaml(admin, client):
+    ok(admin.post('/api/family/shortcuts', json={'name': 'Vault', 'url': 'https://vault.example.it', 'icon': 'lock'}), 201)
+    r = ok(admin.post('/api/family/shortcuts/import', json={'yaml': SERVICES_YAML}))
+    assert r['added'] == ['Jellyfin', 'Photos', 'kwIRC', 'Logout'] and r['updated'] == ['Vaultwarden']
+    assert r['skipped'] == ['Only a widget']
+    links = {l['name']: l for l in r['links']}
+    assert [l['name'] for l in r['links']] == ['Vaultwarden', 'Jellyfin', 'Photos', 'kwIRC', 'Logout']
+    assert links['Jellyfin']['group'] == 'Multimedia' and links['Vaultwarden']['group'] == 'Sicurezza & Conoscenza'
+    assert links['Jellyfin']['icon'] == 'jellyfin.png' and links['Jellyfin']['icon_kind'] == 'image'
+    assert links['Logout']['icon_kind'] == 'mono' and links['Logout']['url'].endswith('end-session')
+    assert links['kwIRC']['icon_kind'] == 'image' and links['kwIRC']['icon_url'].startswith(f"/api/icons/{links['kwIRC']['id']}?v=")
+    assert all(l['everyone'] for l in r['links'])
+    # Importing again changes nothing
+    r = ok(admin.post('/api/family/shortcuts/import', json={'yaml': SERVICES_YAML}))
+    assert r['added'] == [] and len(r['links']) == 5
+    # A new link goes to the end of its group
+    links = ok(admin.post('/api/family/shortcuts', json={'name': 'Immich', 'url': 'https://immich.example.it', 'icon': 'sh-immich', 'group': 'Multimedia'}), 201)
+    assert [l['name'] for l in links] == ['Vaultwarden', 'Jellyfin', 'Photos', 'Immich', 'kwIRC', 'Logout']
+    assert [l['group'] for l in me(admin)['shortcuts']][:4] == ['Sicurezza & Conoscenza'] + ['Multimedia'] * 3
+    # Bad input
+    for bad in ('', 'a: [', 'just text', '- 1\n- 2'):
+        assert admin.post('/api/family/shortcuts/import', json={'yaml': bad}).status_code == 400, bad
+
+
+def test_shortcut_icons(admin, monkeypatch):
+    import icons
+    for spec, kind in (('lock', 'builtin'), ('jellyfin.png', 'image'), ('Jellyfin', 'image'), ('mdi-logout', 'mono'),
+                       ('si-gitea', 'mono'), ('sh-immich.svg', 'image'), ('https://x.it/a.png', 'image'),
+                       ('../etc/passwd', 'builtin'), ('javascript:alert(1)', 'builtin')):
+        links = ok(admin.post('/api/family/shortcuts', json={'name': spec, 'url': 'https://x.it', 'icon': spec}), 201)
+        assert links[-1]['icon_kind'] == kind, spec
+    assert icons.resolve('jellyfin')[1].endswith('/png/jellyfin.png')
+    assert icons.resolve('sh-immich.svg')[1].endswith('/selfhst/icons/svg/immich.svg')
+    assert icons.resolve('mdi-logout')[1].endswith('/svg/logout.svg')
+    # Downloaded once, then served from the data folder; something that is not an image is refused
+    calls = []
+
+    class Resp:
+        def __init__(self, data, ctype):
+            self.status_code, self.url, self.headers, self.data = 200, 'https://cdn.example/x', {'Content-Type': ctype}, data
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def iter_content(self, n): yield self.data
+
+    answers = {'jellyfin.png': (b'\x89PNG\r\n\x1a\nxxxx', 'image/png'), 'mdi-logout': (b'<svg xmlns="x"><path d="M0"/></svg>', 'text/plain'),
+               'https://x.it/a.png': (b'<html>login</html>', 'text/html')}
+    monkeypatch.setattr(icons.requests, 'get', lambda url, **kw: calls.append(url) or Resp(*answers[next(k for k in answers if icons.resolve(k)[1] == url)]))
+    links = {l['name']: l for l in ok(admin.get('/api/family/shortcuts'))}
+    r = admin.get(links['jellyfin.png']['icon_url'])
+    assert r.status_code == 200 and r.mimetype == 'image/png' and 'max-age' in r.headers['Cache-Control']
+    admin.get(links['jellyfin.png']['icon_url'])
+    assert len(calls) == 1
+    r = admin.get(links['mdi-logout']['icon_url'])
+    assert r.mimetype == 'image/svg+xml' and 'sandbox' in r.headers['Content-Security-Policy']
+    assert admin.get(links['https://x.it/a.png']['icon_url']).status_code == 404
+    assert admin.get(links['https://x.it/a.png']['icon_url']).status_code == 404 and len(calls) == 3  # not retried at once
+
+
 def test_import_merges_a_family_made_separately(admin, monkeypatch):
     """Sara had made her own doTrack family: it is proposed for merging, and merged on request."""
     exports = {
@@ -259,3 +360,70 @@ def test_merge_in_app_reports_errors(monkeypatch):
         raise requests.ConnectionError('x')
     monkeypatch.setattr(requests, 'post', down)
     assert 'not reachable' in api_import.merge_in_app(app, 1, [2])['error']
+
+
+def test_eatrack_reaches_dotrack_through_wehub(admin, client, monkeypatch):
+    import service
+    fid, uid = me(admin)['family']['id'], me(admin)['user']['id']
+    calls = []
+
+    class R:
+        status_code = 201
+        def json(self): return {'added': [{'title': 'Zucchine'}], 'skipped': []}
+
+    monkeypatch.setattr(service.requests, 'request', lambda method, url, **kw: calls.append((method, url, kw)) or R())
+    r = ok(service_(client, 'eatrack', 'POST', f'/dotrack/families/{fid}/lists/3/items?user={uid}', json={'items': ['Zucchine']}), 201)
+    assert r['added'] == [{'title': 'Zucchine'}]
+    method, url, kw = calls[0]
+    assert url == f'http://dotrack.test/api/hub/families/{fid}/lists/3/items' and kw['params'] == {'user': uid}
+    assert kw['headers']['Authorization'] == 'Bearer ' + KEYS['dotrack']
+    # Someone outside the family, a wrong key, doTrack asking itself: refused
+    assert service_(client, 'eatrack', 'GET', f'/dotrack/families/{fid}/lists?user=999').status_code == 403
+    assert service_(client, 'dotrack', 'GET', f'/dotrack/families/{fid}/lists?user={uid}').status_code == 404
+    assert client().get(f'/api/service/dotrack/families/{fid}/lists?user={uid}').status_code == 401
+    # Without access to eaTrack, no relay for eaTrack
+    ok(admin.put(f'/api/family/members/{uid}', json={'apps': ['dotrack']}))
+    assert service_(client, 'eatrack', 'GET', f'/dotrack/families/{fid}/lists?user={uid}').status_code == 403
+    assert len(calls) == 1
+
+
+def service_(client, app_id, method, path, **kw):
+    return service(client(), app_id, method, path, **kw)
+
+
+def test_shortcut_status(admin, monkeypatch):
+    import requests as rq
+    import status
+    status.clear()
+    answers = {'https://up.example': 302, 'https://broken.example': 502, 'https://nohead.example': 405}
+    calls = []
+
+    class R:
+        def __init__(self, code): self.status_code = code
+        def close(self): pass
+
+    def head(url, **kw):
+        calls.append(('HEAD', url))
+        if url == 'https://down.example':
+            raise rq.ConnectionError()
+        return R(answers[url])
+
+    def get(url, **kw):
+        calls.append(('GET', url))
+        return R(200)
+
+    monkeypatch.setattr(status.requests, 'head', head)
+    monkeypatch.setattr(status.requests, 'get', get)
+    for name in ('up', 'broken', 'down', 'nohead'):
+        ok(admin.post('/api/family/shortcuts', json={'name': name, 'url': f'https://{name}.example'}), 201)
+    links = ok(admin.post('/api/family/shortcuts', json={'name': 'quiet', 'url': 'https://quiet.example', 'monitor': False}), 201)
+    ids = {l['name']: str(l['id']) for l in links}
+    assert links[-1]['monitor'] is False and links[0]['monitor'] is True
+    st = ok(admin.get('/api/shortcuts/status'))
+    assert set(st) == {ids[n] for n in ('up', 'broken', 'down', 'nohead')}          # 'quiet' is not checked
+    assert st[ids['up']]['up'] and st[ids['up']]['code'] == 302                   # a redirect to sign-in = up
+    assert not st[ids['broken']]['up'] and not st[ids['down']]['up']
+    assert st[ids['nohead']]['up'] and ('GET', 'https://nohead.example') in calls
+    n = len(calls)
+    ok(admin.get('/api/shortcuts/status'))
+    assert len(calls) == n                                                         # kept for a minute
