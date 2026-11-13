@@ -39,14 +39,20 @@ Each app keeps working on its own unless `*_HUB_URL` and `*_HUB_KEY` are set. Wh
    child is archived, meals kept.
 4. If weHub is down, people who signed in before go on working with the copy.
 5. In the apps, the family, its members and people become read-only, with a link to weHub.
-6. eaTrack sends the weekly menu to a doTrack shopping list through weHub
-   (`/api/service/dotrack/families/<id>/lists…`): weHub passes the request on with doTrack's key, so there is no
-   doTrack address or token to set in eaTrack. The admin only picks the list (eaTrack → Family).
+6. The apps ask each other through weHub (`/api/service/apps/<app>/families/<id>/…`): weHub passes the request on
+   with the other app's key, so no app needs another's address or token. Only the calls listed in `ALLOWED`
+   (`backend/service.py`) go through, for a member of the family who may use the asking app (and, when the answer is
+   paTrack's, paTrack too). Today: eaTrack sends the weekly menu to a doTrack shopping list (the admin only picks the
+   list in eaTrack → Family).
 
 Each app has its own key (`python manage.py new-key`), set both in weHub (`WEHUB_APP_<APP>_KEY`) and in the app
 (`<APP>_HUB_KEY`). It is only used between servers.
 
 ## Setting it up
+
+The code shared with the apps (mail, backups, the weHub link, sign-in) is in the `backend/famkit` submodule
+([famkit](https://github.com/filippogiuliani/famkit)): clone every app with `git clone --recurse-submodules …`, or run
+`git submodule update --init` in a clone made without it (`deploy/build-images.sh` does it when it is missing).
 1. Pocket ID: add an OIDC client for weHub and one for each app (callback `<URL>/api/oidc/pocketid/callback`).
    Make sure Pocket ID sends `email_verified` true for your users (weHub and the apps match people by verified
    email the first time).

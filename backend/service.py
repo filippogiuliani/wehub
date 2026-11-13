@@ -8,10 +8,11 @@ A snapshot: {hub_id, name, version, local_id, members: [{hub_id, name, email, ro
              people: [{hub_id, name, birth_date, kind, user_hub_id, local_id}]}
 local_id is the app's own id of that family/person when weHub knows it (from the import): the app adopts that row.
 
-- GET  /api/service/dotrack/families/<id>/lists?user=<id>        doTrack's shopping lists of that family
-- POST /api/service/dotrack/families/<id>/lists/<list>/items?user=<id>  {items}: add to one of them
-  For eaTrack (weekly menu → shopping list): weHub passes the request on to doTrack with doTrack's key, so eaTrack
-  needs no doTrack address or token. Only for a family the person is in and may use the calling app in."""
+- /api/service/apps/<app>/families/<id>/<path>?user=<id>   one app asking another (see ALLOWED): weHub passes the
+  request on to <app>'s /api/hub/families/<id>/<path> with that app's key, adding ?level= (the person's access to
+  <app>, empty when none) and ?from= (the asking app)."""
+import re
+
 import requests
 from flask import Blueprint, abort, g, jsonify, request
 
@@ -99,39 +100,70 @@ def family(family_id):
         return jsonify(snapshot(conn, family_id))
 
 
-# ---------- One app asking another (eaTrack → doTrack), through weHub ----------
+# ---------- One app asking another, through weHub ----------
+# The asking app never needs the other app's address or key: weHub passes the request on with the key it holds, for a
+# family the person is in and may use the asking app in. Only the calls listed here go through.
+#   (asking app, answering app): [(method, path regex, the person must also have access to the answering app)]
+ALLOWED = {
+    ('eatrack', 'dotrack'): [('GET', r'/lists', False),                      # weekly menu → shopping list
+                             ('POST', r'/lists/\d+/items', False)],
+}
+PASSED_ON = (200, 201, 400, 403, 404, 409)
 
-def _relay(family_id, method, path, payload=None):
-    target = apps.get('dotrack')
-    if not target or not target['key'] or g.app['id'] == 'dotrack':
-        abort(404, 'doTrack is not connected to weHub')
+
+def _allowed(target, method, path):
+    """(allowed, the person must have access to the target too)"""
+    for m, rule, needs_access in ALLOWED.get((g.app['id'], target), []):
+        if m == method and re.fullmatch(rule, path):
+            return True, needs_access
+    return False, False
+
+
+def _level(conn, family_id, user_id, app_id):
+    """The person's access to that app in that family ('full', 'limited'), None when they may not use it."""
+    r = conn.execute('''SELECT a.level FROM members m JOIN access a ON a.family_id = m.family_id AND a.user_id = m.user_id
+                        WHERE m.family_id = ? AND m.user_id = ? AND a.app = ?''', (family_id, user_id, app_id)).fetchone()
+    return r['level'] if r else None
+
+
+@bp.route('/service/apps/<target>/families/<int:family_id>/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def relay(target, family_id, path):
+    path = '/' + path
+    allowed, needs_access = _allowed(target, request.method, path)
+    if not allowed:
+        abort(403, 'This app may not ask that')
+    app = apps.get(target)
+    if not app or not app['key']:
+        abort(404, f'{target} is not connected to weHub')
     user_id = request.args.get('user', type=int)
     with db.transaction() as conn:
-        ok = conn.execute('''SELECT 1 FROM members m JOIN access a ON a.family_id = m.family_id AND a.user_id = m.user_id
-                             WHERE m.family_id = ? AND m.user_id = ? AND a.app = ?''', (family_id, user_id, g.app['id'])).fetchone()
-    if not ok:
-        abort(403, 'Not a member of this family')
+        if not _level(conn, family_id, user_id, g.app['id']):
+            abort(403, 'Not a member of this family')
+        target_level = _level(conn, family_id, user_id, target)
+    if needs_access and not target_level:
+        abort(403, f"You do not use {app['name']} in this family")
+    params = {k: v for k, v in request.args.items() if k not in ('user', 'level', 'from')}
+    params.update({'user': user_id, 'level': target_level or '', 'from': g.app['id']})
+    payload = request.get_json(silent=True) if request.method in ('POST', 'PUT') else None
     try:
-        r = requests.request(method, f"{target['internal_url']}/api/hub/families/{family_id}{path}", params={'user': user_id},
+        r = requests.request(request.method, f"{app['internal_url']}/api/hub/families/{family_id}{path}", params=params,
                              json=payload, timeout=10, allow_redirects=False,
-                             headers={'Authorization': f"Bearer {target['key']}", 'User-Agent': 'weHub'})
+                             headers={'Authorization': f"Bearer {app['key']}", 'User-Agent': 'weHub'})
     except requests.RequestException:
-        return jsonify(error='doTrack is not reachable'), 502
+        return jsonify(error=f"{app['name']} is not reachable"), 502
     try:
         data = r.json()
     except ValueError:
-        return jsonify(error='doTrack answered with an error'), 502
-    return jsonify(data), (r.status_code if r.status_code in (200, 201, 400, 404) else 502)
+        return jsonify(error=f"{app['name']} answered with an error"), 502
+    return jsonify(data), (r.status_code if r.status_code in PASSED_ON else 502)
 
 
+# The addresses eaTrack used before the general route (images built before 2026-11-13)
 @bp.get('/service/dotrack/families/<int:family_id>/lists')
 def dotrack_lists(family_id):
-    return _relay(family_id, 'GET', '/lists')
+    return relay('dotrack', family_id, 'lists')
 
 
 @bp.post('/service/dotrack/families/<int:family_id>/lists/<int:list_id>/items')
 def dotrack_items(family_id, list_id):
-    items = body().get('items')
-    if not isinstance(items, list) or not items or len(items) > 200:
-        abort(400, 'Invalid request')
-    return _relay(family_id, 'POST', f'/lists/{list_id}/items', {'items': items})
+    return relay('dotrack', family_id, f'lists/{list_id}/items')

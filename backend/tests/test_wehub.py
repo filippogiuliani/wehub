@@ -375,16 +375,44 @@ def test_eatrack_reaches_dotrack_through_wehub(admin, client, monkeypatch):
     r = ok(service_(client, 'eatrack', 'POST', f'/dotrack/families/{fid}/lists/3/items?user={uid}', json={'items': ['Zucchine']}), 201)
     assert r['added'] == [{'title': 'Zucchine'}]
     method, url, kw = calls[0]
-    assert url == f'http://dotrack.test/api/hub/families/{fid}/lists/3/items' and kw['params'] == {'user': uid}
+    assert url == f'http://dotrack.test/api/hub/families/{fid}/lists/3/items'
+    assert kw['params'] == {'user': uid, 'level': 'full', 'from': 'eatrack'}
     assert kw['headers']['Authorization'] == 'Bearer ' + KEYS['dotrack']
     # Someone outside the family, a wrong key, doTrack asking itself: refused
     assert service_(client, 'eatrack', 'GET', f'/dotrack/families/{fid}/lists?user=999').status_code == 403
-    assert service_(client, 'dotrack', 'GET', f'/dotrack/families/{fid}/lists?user={uid}').status_code == 404
+    assert service_(client, 'dotrack', 'GET', f'/dotrack/families/{fid}/lists?user={uid}').status_code == 403
     assert client().get(f'/api/service/dotrack/families/{fid}/lists?user={uid}').status_code == 401
     # Without access to eaTrack, no relay for eaTrack
     ok(admin.put(f'/api/family/members/{uid}', json={'apps': ['dotrack']}))
     assert service_(client, 'eatrack', 'GET', f'/dotrack/families/{fid}/lists?user={uid}').status_code == 403
     assert len(calls) == 1
+
+
+def test_relay_only_what_is_listed(admin, client, monkeypatch):
+    import service
+    fid, uid = me(admin)['family']['id'], me(admin)['user']['id']
+    calls = []
+
+    class R:
+        status_code = 200
+        def json(self): return [{'id': 3, 'name': 'Spesa'}]
+
+    monkeypatch.setattr(service.requests, 'request', lambda method, url, **kw: calls.append((method, url, kw)) or R())
+    # The general address, with the caller's own query parameters passed on (but not user/level/from)
+    assert ok(service_(client, 'eatrack', 'GET', f'/apps/dotrack/families/{fid}/lists?user={uid}&kind=x&level=full&from=patrack'))
+    assert calls[-1][2]['params'] == {'kind': 'x', 'user': uid, 'level': 'full', 'from': 'eatrack'}
+    # Not in the list: another path, another method, another pair of apps
+    assert service_(client, 'eatrack', 'GET', f'/apps/dotrack/families/{fid}/items?user={uid}').status_code == 403
+    assert service_(client, 'eatrack', 'DELETE', f'/apps/dotrack/families/{fid}/lists?user={uid}').status_code == 403
+    assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/lists?user={uid}').status_code == 403
+    assert service_(client, 'eatrack', 'GET', f'/apps/dotrack/families/{fid}/lists/../items?user={uid}').status_code in (403, 404)
+    assert len(calls) == 1
+    # The person needs the answering app too, when the rule says so
+    monkeypatch.setitem(service.ALLOWED, ('eatrack', 'patrack'), [('GET', r'/documents', True)])
+    assert ok(service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/documents?user={uid}'))
+    ok(admin.put(f'/api/family/members/{uid}', json={'apps': ['eatrack']}))
+    assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/documents?user={uid}').status_code == 403
+    assert len(calls) == 2
 
 
 def service_(client, app_id, method, path, **kw):

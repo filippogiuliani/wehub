@@ -6,6 +6,9 @@ set -e
 SRC="${SRC:-$(cd "$(dirname "$0")/../.." && pwd)}"
 build() { # image folder
   if [ ! -f "$SRC/$2/Dockerfile" ]; then echo "Missing $SRC/$2/Dockerfile" >&2; exit 1; fi
+  if [ -d "$SRC/$2/.git" ] && [ ! -f "$SRC/$2/backend/famkit/__init__.py" ]; then
+    git -C "$SRC/$2" submodule update --init   # famkit, the shared code
+  fi
   echo "== $1 ($SRC/$2)"
   docker build -t "$1:latest" "$SRC/$2"
 }

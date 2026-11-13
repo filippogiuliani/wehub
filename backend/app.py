@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from flask import Flask, abort, jsonify, request, send_from_directory
 
 import auth
-import backup
+from famkit import backup
 import db
 import i18n
 import oidc

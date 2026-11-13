@@ -17,7 +17,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import apps
 import db
 import i18n
-import mail
+from famkit import mail
 from common import body, text
 
 bp = Blueprint('auth', __name__)

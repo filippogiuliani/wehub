@@ -2,6 +2,7 @@
 without an account are (kids, grandparents), and who may use which app."""
 import os
 import sqlite3
+import sys
 from contextlib import contextmanager
 
 DATA_DIR = os.environ.get('WEHUB_DATA', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
@@ -175,3 +176,8 @@ def init_db():
         conn.commit()
     finally:
         conn.close()
+
+
+# The shared code (famkit: mail, backups) reads WEHUB_* variables and uses this module
+import famkit  # noqa: E402
+famkit.configure('WEHUB', 'weHub', sys.modules[__name__])
