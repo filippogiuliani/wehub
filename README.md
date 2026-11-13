@@ -33,8 +33,10 @@ Each app keeps working on its own unless `*_HUB_URL` and `*_HUB_KEY` are set. Wh
 2. After sign-in the app asks weHub (`POST /api/service/whoami`, with its key) who the person is and which families
    may use that app; it copies those families: members, roles, people. Someone without access is told to ask the
    family admin.
-3. Every 2 minutes (`*_HUB_SYNC_SECONDS`) the app refreshes its families (`GET /api/service/families/<id>`, answered
-   with "unchanged" when nothing changed). Removed members lose access and are signed out; removed people:
+3. When a family changes in weHub, every app is told at once (`POST /api/hub/changed`) and refreshes it
+   (`GET /api/service/families/<id>`); every 2 minutes (`*_HUB_SYNC_SECONDS`) the apps also check on their own, in
+   case a message was lost (answered with "unchanged" when nothing changed). The family also says which apps each
+   member may use: the apps show them in their app switcher (the grid next to the logo). Removed members lose access and are signed out; removed people:
    doTrack → their to-dos go back to "anyone", paTrack → their documents become the whole family's, eaTrack → the
    child is archived, meals kept.
 4. If weHub is down, people who signed in before go on working with the copy.
