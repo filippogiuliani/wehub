@@ -455,3 +455,30 @@ def test_shortcut_status(admin, monkeypatch):
     n = len(calls)
     ok(admin.get('/api/shortcuts/status'))
     assert len(calls) == n                                                         # kept for a minute
+
+
+def test_apps_are_told_when_a_family_changes(admin, monkeypatch):
+    import push
+    import requests as rq
+    fid = me(admin)['family']['id']
+    monkeypatch.setattr(push, 'ENABLED', True)
+    monkeypatch.setattr(push, 'changed', lambda family_id: push._pending.add(family_id))  # no thread: flushed below
+    ok(admin.post('/api/family/members', json={'name': 'Sara', 'email': 'sara@example.com', 'apps': ['dotrack']}), 201)
+    calls = []
+
+    class R:
+        status_code = 200
+
+    monkeypatch.setattr(rq, 'post', lambda url, **kw: calls.append((url, kw)) or R())
+    told = push.flush()
+    assert told == {'dotrack': [fid], 'eatrack': [fid], 'patrack': [fid]}
+    assert {u for u, _ in calls} == {f'http://{a}.test/api/hub/changed' for a in ('dotrack', 'eatrack', 'patrack')}
+    assert all(kw['json'] == {'family': fid} for _, kw in calls)
+    assert {kw['headers']['Authorization'] for _, kw in calls} == {'Bearer ' + k for k in KEYS.values()}
+    assert push.flush() == {}   # nothing pending any more
+
+    def down(url, **kw):
+        raise rq.ConnectionError()
+    monkeypatch.setattr(rq, 'post', down)
+    push._pending.add(fid)
+    assert push.flush() == {}   # an app that is down: logged, the periodic refresh catches up

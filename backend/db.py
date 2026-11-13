@@ -139,8 +139,11 @@ def transaction():
 
 
 def bump(conn, family_id):
+    """The family changed: its version goes up and the apps are told (push.py) once the change is committed."""
     if family_id:
         conn.execute('UPDATE families SET version = version + 1 WHERE id = ?', (family_id,))
+        import push
+        push.changed(family_id)
 
 
 def create_family(conn, name):

@@ -38,6 +38,9 @@ def app(tmp_path, monkeypatch, outbox):
     monkeypatch.setattr(db, 'DB_PATH', str(tmp_path / 'wehub.db'))
     monkeypatch.setattr(backup, 'BACKUP_DIR', str(tmp_path / 'backups'))
     monkeypatch.setattr(oidc, 'PROVIDERS', {})
+    import push
+    monkeypatch.setattr(push, 'ENABLED', False)
+    push._pending.clear()
     auth._attempts.clear()
     return create_app()
 

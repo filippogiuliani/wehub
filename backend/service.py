@@ -4,8 +4,9 @@
                                  this app in, and what those families look like
 - GET  /api/service/families/<id> the current picture of a family (members with access to the app, people)
 
-A snapshot: {hub_id, name, version, local_id, members: [{hub_id, name, email, role, level}],
-             people: [{hub_id, name, birth_date, kind, user_hub_id, local_id}]}
+A snapshot: {hub_id, name, version, local_id, members: [{hub_id, name, email, role, level, apps}],
+             people: [{hub_id, name, birth_date, kind, user_hub_id, local_id}], apps: [{id, name, url, description}]}
+members[].apps: the apps that member may use in the family (for the app switcher).
 local_id is the app's own id of that family/person when weHub knows it (from the import): the app adopts that row.
 
 - /api/service/apps/<app>/families/<id>/<path>?user=<id>   one app asking another (see ALLOWED): weHub passes the
@@ -42,8 +43,11 @@ def snapshot(conn, family_id):
     f = conn.execute('SELECT id, name, version FROM families WHERE id = ?', (family_id,)).fetchone()
     if not f:
         return None
+    can_use = {}
+    for r in conn.execute('SELECT user_id, app FROM access WHERE family_id = ? ORDER BY app', (family_id,)):
+        can_use.setdefault(r['user_id'], []).append(r['app'])
     members = [{'hub_id': r['id'], 'name': r['name'], 'email': r['email'], 'role': r['role'], 'level': r['level'],
-                'language': r['language']}
+                'language': r['language'], 'apps': can_use.get(r['id'], [])}
                for r in conn.execute('''SELECT u.id, u.name, u.email, u.language, m.role, a.level FROM members m
                                         JOIN users u ON u.id = m.user_id
                                         JOIN access a ON a.family_id = m.family_id AND a.user_id = m.user_id AND a.app = ?
@@ -54,7 +58,7 @@ def snapshot(conn, family_id):
     conn.execute("INSERT INTO app_seen (family_id, app, at) VALUES (?, ?, datetime('now')) "
                  "ON CONFLICT(family_id, app) DO UPDATE SET at = excluded.at", (family_id, g.app['id']))
     return {'hub_id': f['id'], 'name': f['name'], 'version': f['version'], 'local_id': _link(conn, 'family', f['id']),
-            'members': members, 'people': people}
+            'members': members, 'people': people, 'apps': apps.public()}
 
 
 def _user(u):
