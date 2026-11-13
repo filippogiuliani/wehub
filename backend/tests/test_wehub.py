@@ -501,3 +501,29 @@ def test_only_documents_between_apps_may_be_big(admin, client, monkeypatch):
     assert service_(client, 'patrack', 'PUT', f'/apps/dotrack/families/{fid}/deadlines/other-3?user={uid}', json={}).status_code == 403
     assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/plans?user={uid}&child=4').status_code == 201
     assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/documents?user={uid}').status_code == 403
+
+
+def test_home_summary_asks_only_the_apps_the_person_uses(admin, monkeypatch):
+    import requests as rq
+    import summary
+    asked = []
+
+    class R:
+        status_code = 200
+        def __init__(self, url): self.url = url
+        def json(self): return {'from': self.url.split('/')[2]}
+
+    def fake(url, **kw):
+        asked.append((url, kw['params'], kw['headers']['Authorization']))
+        if 'eatrack' in url:
+            raise rq.ConnectionError()
+        return R(url)
+    monkeypatch.setattr(summary.requests, 'get', fake)
+    fid, uid = me(admin)['family']['id'], me(admin)['user']['id']
+    r = ok(admin.get('/api/home/summary'))
+    assert r['apps'] == {'dotrack': {'from': 'dotrack.test'}, 'eatrack': None, 'patrack': {'from': 'patrack.test'}}
+    assert {u for u, _, _ in asked} == {f'http://{a}.test/api/hub/families/{fid}/summary' for a in ('dotrack', 'eatrack', 'patrack')}
+    assert all(p == {'user': uid, 'level': 'full', 'from': 'wehub'} for _, p, _ in asked)
+    ok(admin.put(f'/api/family/members/{uid}', json={'apps': ['patrack']}))
+    asked.clear()
+    assert set(ok(admin.get('/api/home/summary'))['apps']) == {'patrack'} and len(asked) == 1

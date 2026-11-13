@@ -16,6 +16,7 @@ from api_family import bp as family_bp
 from api_import import bp as import_bp
 from api_shortcuts import bp as shortcuts_bp
 from service import bp as service_bp
+from summary import bp as summary_bp
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; "
@@ -49,7 +50,7 @@ def create_app():
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     oidc.configure(app)
-    for bp in (auth.bp, oidc.bp, family_bp, import_bp, service_bp, shortcuts_bp):
+    for bp in (auth.bp, oidc.bp, family_bp, import_bp, service_bp, shortcuts_bp, summary_bp):
         app.register_blueprint(bp, url_prefix='/api')
 
     @app.before_request

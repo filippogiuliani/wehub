@@ -17,6 +17,22 @@
     const timer = setInterval(load, 60000);
     return () => clearInterval(timer);
   });
+  // A short summary from each app (what is coming up, today's meals, documents to fix): asked to weHub, which asks the apps
+  let summary = $state(null); // { apps: { id: data | null } }
+  $effect(() => {
+    app.me.family?.id;
+    const load = () => { if (!document.hidden) get('/home/summary').then((r) => (summary = r)).catch(() => {}); };
+    load();
+    const timer = setInterval(load, 120000);
+    return () => clearInterval(timer);
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  function when(d, time) {
+    const day = d < today ? t('sum.overdue_on', { date: shortDate(d) }) : d === today ? t('sum.today') : d === tomorrow ? t('sum.tomorrow') : shortDate(d);
+    return time ? `${day} ${time}` : day;
+  }
+  const shortDate = (d) => new Date(d + 'T12:00:00').toLocaleDateString(language.id, { day: 'numeric', month: 'short' });
   const statusText = (st) => !st ? t('links.status_checking')
     : st.up ? t('links.status_up', { ms: st.ms ?? '?' })
     : st.code ? t('links.status_error', { code: st.code })
@@ -41,15 +57,50 @@
 {#if apps.length}
   <div class="grid">
     {#each apps as a (a.id)}
-      <a class="tile" href={a.url || '#'} aria-disabled={!a.url}>
-        <AppIcon id={a.id} size={48} />
-        <span class="txt">
-          <b>{a.name}</b>
-          <span class="small muted">{a.description?.[language.id] ?? a.description?.en ?? ''}</span>
-          {#if a.level === 'limited'}<span class="badge">{t('access.limited')}</span>{/if}
-        </span>
-        <Icon name="right" size={18} />
-      </a>
+      {@const sm = summary?.apps?.[a.id]}
+      <section class="app-card">
+        <a class="tile" href={a.url || '#'} aria-disabled={!a.url}>
+          <AppIcon id={a.id} size={44} />
+          <span class="txt">
+            <b>{a.name}</b>
+            <span class="small muted">{a.description?.[language.id] ?? a.description?.en ?? ''}</span>
+            {#if a.level === 'limited'}<span class="badge">{t('access.limited')}</span>{/if}
+          </span>
+          <Icon name="right" size={18} />
+        </a>
+        <div class="sum">
+          {#if !summary}<p class="small muted">…</p>
+          {:else if summary.apps[a.id] === undefined}
+          {:else if !sm}<p class="small muted">{t('sum.no_answer', { app: a.name })}</p>
+          {:else if a.id === 'dotrack'}
+            <p class="counts small">
+              {#if sm.overdue}<span class="late">{t('sum.n_overdue', { n: sm.overdue })}</span>{/if}
+              <span>{t('sum.n_today', { n: sm.today })}</span><span>{t('sum.n_week', { n: sm.week })}</span>
+            </p>
+            {#each sm.items as it (it.id)}
+              <a class="line" href={it.url ?? a.url}><span class="grow ell">{it.title}</span>
+                <span class="small" class:late={it.due_date < today}>{when(it.due_date, it.due_time)}</span>
+                {#if it.who}<span class="small muted who" class:mine={it.mine}>{it.who}</span>{/if}</a>
+            {:else}<p class="small muted">{t('sum.nothing_due')}</p>{/each}
+          {:else if a.id === 'eatrack'}
+            {#each sm.children as c (c.name)}
+              <p class="small"><b>{c.name}</b> · {c.meals_today.length ? c.meals_today.map((m) => t('meal.' + m)).join(', ') : t('sum.no_meals')}</p>
+            {:else}<p class="small muted">{t('sum.no_children')}</p>{/each}
+            {#if sm.jars_soon}<p class="small late">{t('sum.jars_soon', { n: sm.jars_soon })}</p>{/if}
+          {:else if a.id === 'patrack'}
+            <p class="counts small">
+              {#if sm.to_fix}<span class="late">{t('sum.to_fix', { n: sm.to_fix })}</span>{/if}
+              {#if sm.errors}<span class="late">{t('sum.import_errors', { n: sm.errors })}</span>{/if}
+              <span>{t('sum.added_week', { n: sm.added_week })}</span>
+            </p>
+            {#each sm.expiring as d (d.id)}
+              <a class="line" href={d.url ?? a.url}><span class="grow ell">{d.title}</span>
+                {#if d.person}<span class="small muted">{d.person}</span>{/if}
+                <span class="small" class:late={d.expiry_date < today}>{t(d.expiry_date < today ? 'sum.expired_on' : 'sum.expires_on', { date: shortDate(d.expiry_date) })}</span></a>
+            {/each}
+          {/if}
+        </div>
+      </section>
     {/each}
   </div>
   <p class="tiny muted note">{t('home.note')}</p>
@@ -89,11 +140,21 @@
 
 <style>
   .head { margin-bottom: 20px; display: flex; flex-direction: column; gap: 4px; }
-  .grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
-  @media (min-width: 700px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .tile { display: flex; align-items: center; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-lg);
-    background: var(--surface); text-decoration: none; color: var(--ink); }
-  .tile:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; }
+  .app-card { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+  .tile { display: flex; align-items: center; gap: 14px; padding: 16px 18px; text-decoration: none; color: var(--ink); }
+  .tile:hover { background: var(--surface-2); }
+  .sum { display: flex; flex-direction: column; gap: 6px; padding: 0 18px 16px; }
+  .sum:empty { display: none; }
+  .sum p { margin: 0; }
+  .counts { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
+  .line { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: var(--r-sm, 8px);
+    text-decoration: none; color: var(--ink); }
+  .line:hover { background: var(--surface-2); }
+  .grow { flex: 1; min-width: 0; }
+  .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .late { color: var(--danger); }
+  .who.mine { color: var(--primary); font-weight: 600; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .txt b { font-size: 1.05rem; }
   .txt .badge { align-self: flex-start; margin-top: 4px; }

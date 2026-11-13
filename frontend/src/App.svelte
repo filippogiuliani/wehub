@@ -116,6 +116,6 @@
     .nav a.on { background: var(--primary-soft); }
     .logout { margin-top: auto; }
     .logout:hover { color: var(--ink); background: var(--surface-2); }
-    .main { padding: 32px 32px 48px; width: 100%; }
+    .main { padding: 32px 32px 48px; width: 100%; max-width: 1680px; }
   }
 </style>
