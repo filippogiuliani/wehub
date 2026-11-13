@@ -482,3 +482,22 @@ def test_apps_are_told_when_a_family_changes(admin, monkeypatch):
     monkeypatch.setattr(rq, 'post', down)
     push._pending.add(fid)
     assert push.flush() == {}   # an app that is down: logged, the periodic refresh catches up
+
+
+def test_only_documents_between_apps_may_be_big(admin, client, monkeypatch):
+    import service
+    fid, uid = me(admin)['family']['id'], me(admin)['user']['id']
+    big = {'content': 'x' * (2 * 1024 * 1024)}
+    assert admin.put('/api/family', json={'name': 'x', **big}).status_code == 413
+
+    class R:
+        status_code = 201
+        def json(self): return {'id': 5, 'url': 'https://pa/#/doc/5'}
+    monkeypatch.setattr(service.requests, 'request', lambda method, url, **kw: R())
+    r = service_(client, 'dotrack', 'POST', f'/apps/patrack/families/{fid}/documents?user={uid}', json=big)
+    assert r.status_code == 201
+    # Listed calls of phase 3, and nothing else between those apps
+    assert service_(client, 'patrack', 'PUT', f'/apps/dotrack/families/{fid}/deadlines/patrack-3?user={uid}', json={}).status_code == 201
+    assert service_(client, 'patrack', 'PUT', f'/apps/dotrack/families/{fid}/deadlines/other-3?user={uid}', json={}).status_code == 403
+    assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/plans?user={uid}&child=4').status_code == 201
+    assert service_(client, 'eatrack', 'GET', f'/apps/patrack/families/{fid}/documents?user={uid}').status_code == 403

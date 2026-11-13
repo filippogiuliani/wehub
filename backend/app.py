@@ -11,6 +11,7 @@ from famkit import backup
 import db
 import i18n
 import oidc
+import service
 from api_family import bp as family_bp
 from api_import import bp as import_bp
 from api_shortcuts import bp as shortcuts_bp
@@ -41,7 +42,7 @@ def create_app():
     app.config.update(
         SESSION_COOKIE_NAME='wehub_session', SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
         SESSION_COOKIE_SECURE=os.environ.get('WEHUB_COOKIE_SECURE') == '1',
-        PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=60), MAX_CONTENT_LENGTH=1024 * 1024, JSON_AS_ASCII=False,
+        PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=60), MAX_CONTENT_LENGTH=service.MAX_RELAYED, JSON_AS_ASCII=False,
     )
     if os.environ.get('WEHUB_PROXY') == '1':
         from werkzeug.middleware.proxy_fix import ProxyFix
@@ -50,6 +51,12 @@ def create_app():
     oidc.configure(app)
     for bp in (auth.bp, oidc.bp, family_bp, import_bp, service_bp, shortcuts_bp):
         app.register_blueprint(bp, url_prefix='/api')
+
+    @app.before_request
+    def size_limit():
+        # 1 MB is plenty for weHub itself; only documents passed from one app to another are bigger
+        if (request.content_length or 0) > 1024 * 1024 and not request.path.startswith('/api/service/apps/'):
+            abort(413)
 
     @app.before_request
     def protect():

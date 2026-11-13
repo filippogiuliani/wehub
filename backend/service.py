@@ -111,7 +111,12 @@ def family(family_id):
 ALLOWED = {
     ('eatrack', 'dotrack'): [('GET', r'/lists', False),                      # weekly menu → shopping list
                              ('POST', r'/lists/\d+/items', False)],
+    ('patrack', 'dotrack'): [('PUT', r'/deadlines/patrack-\d+', False),       # a document's expiry → a deadline
+                             ('DELETE', r'/deadlines/patrack-\d+', False)],
+    ('dotrack', 'patrack'): [('POST', r'/documents', True)],                 # a deadline's document → the archive
+    ('eatrack', 'patrack'): [('GET', r'/plans', True)],                      # the paediatrician's plans of a child
 }
+MAX_RELAYED = 30 * 1024 * 1024   # a document (base64) from doTrack to paTrack; everything else stays under 1 MB
 PASSED_ON = (200, 201, 400, 403, 404, 409)
 
 
